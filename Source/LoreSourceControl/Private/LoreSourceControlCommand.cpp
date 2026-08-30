@@ -90,5 +90,7 @@ bool FLoreSourceControlCommand::QueryLockStatus(TMap<FString, FLoreLockOwner>& O
 		return false;
 	}
 
-	return FLoreSourceControlUtils::GetLoreLockStatus(PathToLoreBinary, PathToRepositoryRoot, *Provider, OutLockedBy, &OutErrorMessages);
+	// No backoff: the only caller that verifies lock ownership before a submit, and a submit must not be
+	// waved through - or blocked - on a cached answer. Anything short of a real listing is a failure here.
+	return FLoreSourceControlUtils::GetLoreLockStatus(PathToLoreBinary, PathToRepositoryRoot, *Provider, OutLockedBy, &OutErrorMessages) == ELoreLockQueryResult::Succeeded;
 }

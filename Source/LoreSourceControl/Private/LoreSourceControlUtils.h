@@ -28,6 +28,22 @@ struct LORESOURCECONTROL_API FLoreStatusSummary
 	bool bIsLocalAhead = false;
 };
 
+/** Outcome of a "lore lock query", which can fail for reasons that are not the caller's problem. */
+enum class ELoreLockQueryResult : uint8
+{
+	/** Locks were listed - OutLockedBy is authoritative. */
+	Succeeded,
+
+	/**
+	 * The lock service could not be reached (remote unreachable, or no auth endpoint configured).
+	 * Lock ownership is simply unknown; everything Lore reports purely from the working copy is still valid.
+	 */
+	Unavailable,
+
+	/** The query failed for some other reason and the errors are worth surfacing. */
+	Failed
+};
+
 /** A Lore lock owner, retaining both the stable identity and its human-readable name. */
 struct LORESOURCECONTROL_API FLoreLockOwner
 {
@@ -98,7 +114,14 @@ namespace FLoreSourceControlUtils
 	/** Parse structured error events emitted by a Lore command. */
 	LORESOURCECONTROL_API void ParseCommandErrors(const TArray<FString>& InResults, TArray<FString>& OutErrorMessages);
 
-	/** Remove the optional owner-name lookup failure emitted after a successful lock query. */
+	/** True if the message is Lore reporting that the lock service is out of reach rather than a real fault. */
+	LORESOURCECONTROL_API bool IsLockServiceUnavailableError(const FString& InError);
+
+	/**
+	 * Drop the lock-service errors that carry no information for the user:
+	 * the optional owner-name lookup that Lore attempts after a successful query, and,
+	 * when the service is unreachable, the connection failure itself.
+	 */
 	LORESOURCECONTROL_API void RemoveOptionalLockQueryErrors(bool bLockQuerySucceeded, TArray<FString>& InOutErrorMessages);
 
 	/** Parse Lore file-history events and their following metadata events. */
@@ -153,8 +176,12 @@ namespace FLoreSourceControlUtils
 	 * Query every lock on the repository's current branch ("lock query --branch <name>").
 	 * Unlike "lock status", this needs no file list - it lists every locked path in one call,
 	 * which is what both a broad refresh and a single-file one actually need.
+	 *
+	 * Set bAllowBackoff for routine refreshes: once the service is known to be unreachable the query is skipped
+	 * outright for a short cooldown instead of paying a process spawn and a connection timeout on every tick.
+	 * Leave it off wherever a stale answer is unacceptable, such as the lock ownership check that guards a submit.
 	 */
-	bool GetLoreLockStatus(const FString& InLoreBinary, const FString& InRepositoryRoot, const FLoreSourceControlProvider& InProvider, TMap<FString, FLoreLockOwner>& OutLockedBy, TArray<FString>* OutErrorMessages = nullptr);
+	ELoreLockQueryResult GetLoreLockStatus(const FString& InLoreBinary, const FString& InRepositoryRoot, const FLoreSourceControlProvider& InProvider, TMap<FString, FLoreLockOwner>& OutLockedBy, TArray<FString>* OutErrorMessages = nullptr, bool bAllowBackoff = false);
 
 	/** Return every staged file and directory in the repository as normalized absolute paths. */
 	LORESOURCECONTROL_API bool RunGetStagedPaths(const FString& InLoreBinary, const FString& InRepositoryRoot, TArray<FString>& OutStagedFiles, TArray<FString>& OutStagedDirectories, TArray<FString>& OutErrorMessages);

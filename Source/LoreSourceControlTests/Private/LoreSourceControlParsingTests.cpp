@@ -169,6 +169,44 @@ bool FLoreCommandErrorParserTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLoreLockServiceUnavailableTest, "LoreSourceControl.Locks.ServiceUnavailable", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FLoreLockServiceUnavailableTest::RunTest(const FString& Parameters)
+{
+	// Verbatim from "lore --json lock query" against a repository whose remote is unreachable.
+	// The wording is not stable across Lore versions - 0.8.5 reports "Disconnected from server" where an
+	// earlier build reported "while offline" - and the "complete" event carries the bare message with no
+	// trace to key off, so every form that has been seen in the wild is pinned here.
+	const TArray<FString> Results =
+	{
+		TEXT(R"({"tagName":"log","data":{"level":"error","message":"Unable to check lock status while offline: gRPC connection to https://localhost/: transport error"}})"),
+		TEXT(R"({"tagName":"complete","data":{"status":-1,"error":{"errorCode":-1,"message":"No auth endpoint available"}}})"),
+		TEXT(R"({"tagName":"complete","data":{"status":6,"error":{"errorCode":6,"message":"Disconnected from server"}}})")
+	};
+
+	TArray<FString> Errors;
+	FLoreSourceControlUtils::ParseCommandErrors(Results, Errors);
+	TestEqual(TEXT("Offline lock query error count"), Errors.Num(), 3);
+
+	for (const FString& Error : Errors)
+	{
+		TestTrue(FString::Printf(TEXT("Recognized as lock service unavailable: %s"), *Error), FLoreSourceControlUtils::IsLockServiceUnavailableError(Error));
+	}
+
+	TestFalse(TEXT("An unrelated failure is not a lock service outage"), FLoreSourceControlUtils::IsLockServiceUnavailableError(TEXT("lore: repository is corrupt")));
+
+	// A successful query still drops the optional owner-name lookup failure it leaves behind.
+	TArray<FString> AfterSuccess = Errors;
+	FLoreSourceControlUtils::RemoveOptionalLockQueryErrors(true, AfterSuccess);
+	TestEqual(TEXT("Successful query discards unavailable-class errors"), AfterSuccess.Num(), 0);
+
+	// A failed query keeps them - GetLoreLockStatus, not this helper, decides when an outage stops being reported.
+	TArray<FString> AfterFailure = Errors;
+	FLoreSourceControlUtils::RemoveOptionalLockQueryErrors(false, AfterFailure);
+	TestEqual(TEXT("Failed query leaves the errors for the caller to classify"), AfterFailure.Num(), 3);
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLoreChangedPathClassifierTest, "LoreSourceControl.Paths.Classifier", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 
 bool FLoreChangedPathClassifierTest::RunTest(const FString& Parameters)

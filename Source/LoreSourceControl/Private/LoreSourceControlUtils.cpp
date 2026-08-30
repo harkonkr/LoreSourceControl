@@ -15,6 +15,8 @@
 #include "Serialization/JsonSerializer.h"
 #include "UObject/SoftObjectPath.h"
 
+#include <atomic>
+
 #define LOCTEXT_NAMESPACE "LoreSourceControl"
 
 namespace FLoreSourceControlUtils
@@ -402,12 +404,46 @@ namespace FLoreSourceControlUtils
 		}
 	}
 
+	/**
+	 * How long to stop asking after the lock service turns out to be unreachable.
+	 * A status refresh runs far more often than this, and every attempt costs a process spawn plus a
+	 * connection timeout, so without a cooldown an unreachable remote makes every refresh pay for nothing.
+	 */
+	static constexpr double LockServiceRetryCooldownSeconds = 60.0;
+
+	/** FPlatformTime::Seconds() before which a backoff-aware caller skips the lock query outright. Written from worker threads. */
+	static std::atomic<double> GLockServiceUnavailableUntil{ 0.0 };
+
+	/** Set while the current outage has already been reported, so it is surfaced once per outage instead of once per refresh. */
+	static std::atomic<bool> GLockServiceOutageReported{ false };
+
+	bool IsLockServiceUnavailableError(const FString& InError)
+	{
+		// Lore has worded this differently across versions, and the "complete" event carries the bare message with
+		// no trace to key off - 0.8.5 says "Disconnected from server" where an earlier build said "while offline".
+		// So this list is expected to be incomplete, and nothing load-bearing may depend on it: a miss costs some
+		// extra log lines and an earlier retry, never a dropped refresh. See RunUpdateStatus.
+		return InError.Contains(TEXT("Disconnected from server"))
+			|| InError.Contains(TEXT("transport error"))
+			|| InError.Contains(TEXT("while offline"))
+			|| InError.Contains(TEXT("No auth endpoint available"))
+			|| InError.Contains(TEXT("authentication requires a configured auth endpoint"));
+	}
+
 	void RemoveOptionalLockQueryErrors(bool bLockQuerySucceeded, TArray<FString>& InOutErrorMessages)
 	{
 		if (bLockQuerySucceeded)
 		{
-			InOutErrorMessages.RemoveAll([](const FString& Error) { return Error.Contains(TEXT("authentication requires a configured auth endpoint")); });
+			// Lore resolves lock owner display names as an optional follow-up. Local servers without an auth endpoint still return valid lock data.
+			InOutErrorMessages.RemoveAll([](const FString& Error) { return IsLockServiceUnavailableError(Error); });
 		}
+	}
+
+	/** True when the query failed and every error it produced is just the lock service being out of reach. */
+	static bool IsLockServiceOutage(const TArray<FString>& InErrors)
+	{
+		return InErrors.Num() > 0
+			&& !InErrors.ContainsByPredicate([](const FString& Error) { return !IsLockServiceUnavailableError(Error); });
 	}
 
 	bool RunLoreCommand(const FString& InCommand, const FString& InLoreBinary, const FString& InRepositoryRoot, const TArray<FString>& InParameters, const TArray<FString>& InFiles, TArray<FString>& OutResults, TArray<FString>& OutErrorMessages, bool bUseJson)
@@ -519,11 +555,13 @@ namespace FLoreSourceControlUtils
 		// Also query locks and merge in.
 		// A locked but unmodified file has no entry in OutStates because locking alone does not change content, so --scan never flags it as dirty.
 		// Synthesize a clean and checked-out state for every unmatched lock so its checkout icon appears.
+		// Locks are supplementary to the scan above, so a failed lock query is never a reason to fail the refresh -
+		// no matter why it failed. Reporting failure here sets bApplyStateResults to false in the workers, which
+		// drops every state the scan just parsed, and in FLoreConnectWorker it also fails Connect outright, leaving
+		// the editor with revision control switched off. Whatever came back is merged and the errors are surfaced;
+		// an empty map is the honest outcome, since nothing can be asked who holds a lock.
 		TMap<FString, FLoreLockOwner> LockedBy;
-		if (!GetLoreLockStatus(InLoreBinary, InRepositoryRoot, InProvider, LockedBy, &OutErrorMessages))
-		{
-			return false;
-		}
+		GetLoreLockStatus(InLoreBinary, InRepositoryRoot, InProvider, LockedBy, &OutErrorMessages, /*bAllowBackoff*/ true);
 
 		// "lock query" reports the owner as a raw user ID, and our own ID is the repository's configured identity in .lore/config.toml.
 		// Compare against that identity, with "me" and "self" retained as fallbacks.
@@ -1122,8 +1160,15 @@ namespace FLoreSourceControlUtils
 		}
 	}
 
-	bool GetLoreLockStatus(const FString& InLoreBinary, const FString& InRepositoryRoot, const FLoreSourceControlProvider& InProvider, TMap<FString, FLoreLockOwner>& OutLockedBy, TArray<FString>* OutErrorMessages)
+	ELoreLockQueryResult GetLoreLockStatus(const FString& InLoreBinary, const FString& InRepositoryRoot, const FLoreSourceControlProvider& InProvider, TMap<FString, FLoreLockOwner>& OutLockedBy, TArray<FString>* OutErrorMessages, bool bAllowBackoff)
 	{
+		// A known outage is answered without spawning anything - the process start and the connection timeout
+		// are the whole cost here, and repeating them every refresh is what floods the log in the first place.
+		if (bAllowBackoff && FPlatformTime::Seconds() < GLockServiceUnavailableUntil.load(std::memory_order_relaxed))
+		{
+			return ELoreLockQueryResult::Unavailable;
+		}
+
 		// "lock status" requires exact file paths (no --scan/recursive option), so a directory (as the broad Connect/Sync scan passes) silently matches nothing.
 		// "lock query" filtered by --branch lists every lock on the branch regardless of path - what we actually want either way.
 		const FString CurrentBranch = InProvider.GetBranchName();
@@ -1138,13 +1183,37 @@ namespace FLoreSourceControlUtils
 
 		const bool bOk = RunLoreCommand(TEXT("lock query"), InLoreBinary, InRepositoryRoot, Params, TArray<FString>(), Results, Errors);
 		RemoveOptionalLockQueryErrors(bOk, Errors);
+
+		const bool bOutage = !bOk && IsLockServiceOutage(Errors);
+		if (bOutage)
+		{
+			GLockServiceUnavailableUntil.store(FPlatformTime::Seconds() + LockServiceRetryCooldownSeconds, std::memory_order_relaxed);
+
+			// Say it once per outage. Every later refresh hits the same wall and adds nothing by repeating it.
+			if (GLockServiceOutageReported.exchange(true))
+			{
+				Errors.Reset();
+			}
+		}
+		else if (bOk)
+		{
+			GLockServiceUnavailableUntil.store(0.0, std::memory_order_relaxed);
+			GLockServiceOutageReported.store(false, std::memory_order_relaxed);
+		}
+
 		if (OutErrorMessages)
 		{
 			OutErrorMessages->Append(Errors);
 		}
 
 		ParseLockResults(Results, InRepositoryRoot, OutLockedBy);
-		return bOk;
+
+		if (bOk)
+		{
+			return ELoreLockQueryResult::Succeeded;
+		}
+
+		return bOutage ? ELoreLockQueryResult::Unavailable : ELoreLockQueryResult::Failed;
 	}
 
 	bool RunGetStagedPaths(const FString& InLoreBinary, const FString& InRepositoryRoot, TArray<FString>& OutStagedFiles, TArray<FString>& OutStagedDirectories, TArray<FString>& OutErrorMessages)
