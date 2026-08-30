@@ -417,6 +417,19 @@ namespace FLoreSourceControlUtils
 	/** Set while the current outage has already been reported, so it is surfaced once per outage instead of once per refresh. */
 	static std::atomic<bool> GLockServiceOutageReported{ false };
 
+	/** Whether locks are in play. Defaults to true so behaviour before the first command matches a locking setup. */
+	static std::atomic<bool> GLockingActive{ true };
+
+	void SetLockingActive(bool bInActive)
+	{
+		GLockingActive.store(bInActive, std::memory_order_relaxed);
+	}
+
+	bool IsLockingActive()
+	{
+		return GLockingActive.load(std::memory_order_relaxed);
+	}
+
 	bool IsLockServiceUnavailableError(const FString& InError)
 	{
 		// Lore has worded this differently across versions, and the "complete" event carries the bare message with

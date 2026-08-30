@@ -31,9 +31,16 @@ public:
 	virtual const FString& GetFilename() const override { return LocalFilename; }
 	virtual const FDateTime& GetTimeStamp() const override { return TimeStamp; }
 	virtual bool CanCheckIn() const override { return bCanCheckIn; }
-	// Must actually be tracked by Lore already, and not already locked.
-	virtual bool CanCheckout() const override { return bIsSourceControlled && !bIsCheckedOut && !bIsCheckedOutOther; }
-	virtual bool IsCheckedOut() const override { return bIsCheckedOut; }
+	/**
+	 * With locking active: must be tracked by Lore already, and not already locked.
+	 * Without it: never - a check-out that acquires no lock cannot produce a checked-out state, and the editor
+	 * reports "Unable to Check Out From Revision Control" when the state it waits for never appears.
+	 * This mirrors Git, which returns false here for the same reason.
+	 */
+	virtual bool CanCheckout() const override;
+
+	/** Without locking every tracked file is already editable, so it is already checked out - again as Git reports it. */
+	virtual bool IsCheckedOut() const override;
 	virtual bool IsCheckedOutOther(FString* Who) const override;
 	virtual bool IsCheckedOutInOtherBranch(const FString& CurrentBranch = FString()) const override { return false; }
 	virtual bool IsModifiedInOtherBranch(const FString& CurrentBranch = FString()) const override { return false; }
@@ -53,7 +60,7 @@ public:
 	virtual bool IsModified() const override { return bIsModified; }
 	virtual bool CanAdd() const override { return bCanAdd; }
 	virtual bool IsConflicted() const override { return bIsConflicted; }
-	virtual bool CanRevert() const override { return IsModified() || IsCheckedOut() || IsAdded() || IsDeleted(); }
+	virtual bool CanRevert() const override { return IsModified() || bIsCheckedOut || IsAdded() || IsDeleted(); }
 
 	// Extra data we track
 	FString LocalFilename;

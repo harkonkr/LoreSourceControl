@@ -284,6 +284,10 @@ ECommandResult::Type FLoreSourceControlProvider::Execute(const FSourceControlOpe
 	Command->bHasRemote = IsRemoteAvailable();
 	Command->Identity = GetIdentity();
 	Command->bShouldLockFiles = FLoreSourceControlUtils::ShouldLockFiles() && Command->bHasRemote;
+
+	// The states the editor reads have to agree with this: offering a check-out that acquires no lock leaves
+	// the editor waiting for a checked-out state that never arrives, and it reports the save as failed.
+	FLoreSourceControlUtils::SetLockingActive(Command->bShouldLockFiles);
 	Command->OperationCompleteDelegate = InOperationCompleteDelegate;
 
 	if (InConcurrency == EConcurrency::Synchronous)
