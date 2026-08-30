@@ -158,6 +158,16 @@ public:
 	/** Set the "has local unpublished commits" flag (called from status parsing) */
 	void SetHasChangesToPush(const bool bInHasChanges);
 
+	/** Set whether Lore could actually reach the remote on the last status call (called from status parsing) */
+	void SetRemoteAvailable(const bool bInAvailable);
+
+	/**
+	 * True if a remote is configured and Lore reached it on the last status call.
+	 * A configured but unreachable remote is treated as no remote at all: locks cannot be honoured,
+	 * a push cannot land, and blocking on either only stops work that is perfectly safe to do locally.
+	 */
+	bool IsRemoteAvailable() const;
+
 private:
 	/** Create a worker for a given operation */
 	TSharedPtr<ILoreSourceControlWorker> CreateWorker(const FName& InOperationName) const;
@@ -213,6 +223,12 @@ private:
 
 	/** Cached "has unpublished local commits" fact. */
 	bool bHasChangesToPush = false;
+
+	/**
+	 * Whether the last status call reached the remote ("remoteAvailable", Lore 0.8.6+).
+	 * Defaults to true so an older CLI that never reports it keeps the previous always-online behaviour.
+	 */
+	bool bRemoteAvailable = true;
 
 	/** Branch list from the last successful RefreshBranchesAsync(), guarded by CriticalSection */
 	TArray<FLoreBranchInfo> CachedBranches;

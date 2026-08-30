@@ -26,6 +26,12 @@ struct LORESOURCECONTROL_API FLoreStatusSummary
 
 	/** The local branch contains commits that have not been published yet. */
 	bool bIsLocalAhead = false;
+
+	/**
+	 * Lore reached the remote during this status call ("remoteAvailable", Lore 0.8.6+).
+	 * Defaults to true so an older CLI that omits the field behaves exactly as before.
+	 */
+	bool bRemoteAvailable = true;
 };
 
 /** Outcome of a "lore lock query", which can fail for reasons that are not the caller's problem. */

@@ -537,6 +537,7 @@ namespace FLoreSourceControlUtils
 			// It is never narrowed to the files scanned, unlike per-file dirty state (see FLoreSourceControlProvider::HasChangesToCheckIn).
 			InProvider.SetHasChangesToSync(Summary.bIsRemoteAhead);
 			InProvider.SetHasChangesToPush(Summary.bIsLocalAhead);
+			InProvider.SetRemoteAvailable(Summary.bRemoteAvailable);
 		}
 
 		if (!bSuccess)
@@ -547,7 +548,9 @@ namespace FLoreSourceControlUtils
 		// A write-capable Lore command can resolve and save a previously missing identity.
 		InProvider.RefreshRepositoryConfig();
 
-		if (!bQueryLocks)
+		// Locks live on the server. With the remote out of reach there is nothing to ask and nothing that could
+		// answer, so skip the call rather than spend a process spawn and a connection timeout to be told so.
+		if (!bQueryLocks || !Summary.bRemoteAvailable)
 		{
 			return true;
 		}
@@ -708,6 +711,13 @@ namespace FLoreSourceControlUtils
 				if (Data->TryGetBoolField(TEXT("isLocalAhead"), bLocalAhead))
 				{
 					OutSummary->bIsLocalAhead = bLocalAhead;
+				}
+
+				// Lore 0.8.6+. Absent on older builds, where the default keeps the previous always-online behaviour.
+				bool bRemoteAvailable = true;
+				if (Data->TryGetBoolField(TEXT("remoteAvailable"), bRemoteAvailable))
+				{
+					OutSummary->bRemoteAvailable = bRemoteAvailable;
 				}
 			}
 		}

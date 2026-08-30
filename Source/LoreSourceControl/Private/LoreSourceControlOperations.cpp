@@ -87,6 +87,8 @@ bool FLoreCheckInWorker::Execute(FLoreSourceControlCommand& InCommand)
 
 	// Lore locks are advisory, so validate against a fresh server query immediately before staging.
 	// A query failure is a hard stop: stale cache data must never be treated as permission to submit.
+	// bShouldLockFiles is already false when the remote is out of reach, so this guard only runs when a
+	// server is actually there to answer - an unreachable one enforces no locks and takes no push either.
 	if (InCommand.bShouldLockFiles)
 	{
 		TMap<FString, FLoreLockOwner> LockedBy;
@@ -222,7 +224,8 @@ bool FLoreCheckInWorker::Execute(FLoreSourceControlCommand& InCommand)
 	}
 	else if (InCommand.bCommandSuccessful)
 	{
-		InCommand.InfoMessages.Add(TEXT("No remote is configured. The commit was kept locally."));
+		// Covers both "no remote configured" and "configured but out of reach" - bHasRemote is reachability.
+		InCommand.InfoMessages.Add(TEXT("No reachable remote. The commit was kept locally."));
 	}
 
 	// The change is now committed, so there is nothing left to protect by holding the lock - release it, same as Revert.

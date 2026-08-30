@@ -280,7 +280,8 @@ ECommandResult::Type FLoreSourceControlProvider::Execute(const FSourceControlOpe
 	Command->Files = AbsoluteFiles;
 	Command->PathToLoreBinary = GetLoreBinaryPath();
 	Command->PathToRepositoryRoot = RepositoryRoot;
-	Command->bHasRemote = !GetRemoteUrl().IsEmpty();
+	// Reachability, not mere configuration: a remote that Lore cannot connect to must not gate locking or submits.
+	Command->bHasRemote = IsRemoteAvailable();
 	Command->Identity = GetIdentity();
 	Command->bShouldLockFiles = FLoreSourceControlUtils::ShouldLockFiles() && Command->bHasRemote;
 	Command->OperationCompleteDelegate = InOperationCompleteDelegate;
@@ -593,6 +594,7 @@ void FLoreSourceControlProvider::CheckRepositoryStatus()
 		Identity.Empty();
 		bHasChangesToSync = false;
 		bHasChangesToPush = false;
+		bRemoteAvailable = true;
 		CachedBranches.Empty();
 		BranchCacheState = ELoreBranchCacheState::NotLoaded;
 	}
@@ -987,6 +989,18 @@ void FLoreSourceControlProvider::ReloadContentPackages(const TArray<FString>& In
 	}
 
 	CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
+}
+
+void FLoreSourceControlProvider::SetRemoteAvailable(const bool bInAvailable)
+{
+	FScopeLock Lock(&CriticalSection);
+	bRemoteAvailable = bInAvailable;
+}
+
+bool FLoreSourceControlProvider::IsRemoteAvailable() const
+{
+	FScopeLock Lock(&CriticalSection);
+	return bRemoteAvailable && !RemoteUrl.IsEmpty();
 }
 
 void FLoreSourceControlProvider::SetHasChangesToSync(const bool bInHasChanges)

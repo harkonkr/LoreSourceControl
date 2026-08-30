@@ -37,7 +37,7 @@ bool FLoreStatusParserTest::RunTest(const FString& Parameters)
 	const FString CleanPath = MakeTestPath(RepositoryRoot, TEXT("Content/Clean.uasset"));
 
 	const FString Results = FString::Join(TArray<FString>{
-		TEXT(R"({"tagName":"repositoryStatusRevision","data":{"branchName":"main","isRemoteAhead":1,"isLocalAhead":0}})"),
+		TEXT(R"({"tagName":"repositoryStatusRevision","data":{"branchName":"main","isRemoteAhead":1,"isLocalAhead":0,"remoteAvailable":1}})"),
 		TEXT(R"({"tagName":"repositoryStatusFile","data":{"path":"Content/Modified.uasset","action":"keep","type":"file","flagDirty":1,"flagStaged":0,"flagConflict":0,"flagConflictUnresolved":0}})"),
 		TEXT(R"({"tagName":"repositoryStatusFile","data":{"path":"Content/Added.uasset","action":"add","type":"file","flagDirty":1,"flagStaged":1,"flagConflict":0,"flagConflictUnresolved":0}})"),
 		TEXT(R"({"tagName":"repositoryStatusFile","data":{"path":"Content/Moved.uasset","fromPath":"Content/Old.uasset","action":"move","type":"file","flagDirty":1,"flagStaged":0,"flagConflict":0,"flagConflictUnresolved":0}})"),
@@ -54,6 +54,7 @@ bool FLoreStatusParserTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Branch name"), Summary.BranchName, FString(TEXT("main")));
 	TestTrue(TEXT("Remote-ahead flag"), Summary.bIsRemoteAhead);
 	TestFalse(TEXT("Local-ahead flag"), Summary.bIsLocalAhead);
+	TestTrue(TEXT("Remote reported reachable"), Summary.bRemoteAvailable);
 	TestEqual(TEXT("State count"), States.Num(), 7);
 
 	const FLoreSourceControlState* Modified = FindState(States, ModifiedPath);
@@ -171,6 +172,30 @@ bool FLoreCommandErrorParserTest::RunTest(const FString& Parameters)
 	TArray<FString> FailedLockErrors = Errors;
 	FLoreSourceControlUtils::RemoveOptionalLockQueryErrors(false, FailedLockErrors);
 	TestEqual(TEXT("Failed lock query retains auth errors"), FailedLockErrors.Num(), 2);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FLoreRemoteReachabilityTest, "LoreSourceControl.Status.RemoteReachability", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FLoreRemoteReachabilityTest::RunTest(const FString& Parameters)
+{
+	const FString RepositoryRoot = FPaths::ConvertRelativePathToFull(FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("LoreSourceControlTests")));
+
+	// Lore 0.8.6 reports these as numbers, not JSON booleans.
+	FLoreStatusSummary Unreachable;
+	TArray<FLoreSourceControlState> UnreachableStates;
+	FLoreSourceControlUtils::ParseStatusResults(
+		TEXT(R"({"tagName":"repositoryStatusRevision","data":{"branchName":"main","remoteAvailable":0,"remoteAuthorized":0,"remoteBranchExist":0}})"),
+		TArray<FString>(), RepositoryRoot, UnreachableStates, &Unreachable);
+	TestFalse(TEXT("remoteAvailable 0 means out of reach"), Unreachable.bRemoteAvailable);
+
+	// An older CLI omits the field entirely; the default must keep the previous always-online behaviour.
+	FLoreStatusSummary Absent;
+	TArray<FLoreSourceControlState> AbsentStates;
+	FLoreSourceControlUtils::ParseStatusResults(
+		TEXT(R"({"tagName":"repositoryStatusRevision","data":{"branchName":"main"}})"),
+		TArray<FString>(), RepositoryRoot, AbsentStates, &Absent);
+	TestTrue(TEXT("Missing remoteAvailable defaults to reachable"), Absent.bRemoteAvailable);
 	return true;
 }
 
