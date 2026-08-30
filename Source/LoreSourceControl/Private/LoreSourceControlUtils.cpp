@@ -627,7 +627,9 @@ namespace FLoreSourceControlUtils
 
 		TMap<FString, FParsedFileStatus> FileStatuses;
 
-		// pathIgnore means Lore intentionally excludes the path; it must not be offered for add.
+		// Lore reporting an excluded path means it intentionally leaves that path alone; it must not be offered for add.
+		// 0.8.6 renamed the event from "pathIgnore" to "filterExclude" (and added a "reason" code we do not need),
+		// so both spellings are accepted rather than silently treating everything Lore filters out as addable.
 		TSet<FString> IgnoredPaths;
 
 		for (const FString& Line : Lines)
@@ -678,7 +680,7 @@ namespace FLoreSourceControlUtils
 					Status.Type.ToLowerInline();
 				}
 			}
-			else if (TagName == TEXT("pathIgnore"))
+			else if (TagName == TEXT("pathIgnore") || TagName == TEXT("filterExclude"))
 			{
 				FString JPath;
 				if (Data->TryGetStringField(TEXT("path"), JPath) && !JPath.IsEmpty())

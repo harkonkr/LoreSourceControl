@@ -33,6 +33,7 @@ bool FLoreStatusParserTest::RunTest(const FString& Parameters)
 	const FString MovedPath = MakeTestPath(RepositoryRoot, TEXT("Content/Moved.uasset"));
 	const FString OldPath = MakeTestPath(RepositoryRoot, TEXT("Content/Old.uasset"));
 	const FString IgnoredPath = MakeTestPath(RepositoryRoot, TEXT("Saved/Ignored.txt"));
+	const FString ExcludedPath = MakeTestPath(RepositoryRoot, TEXT("Saved/Excluded.txt"));
 	const FString CleanPath = MakeTestPath(RepositoryRoot, TEXT("Content/Clean.uasset"));
 
 	const FString Results = FString::Join(TArray<FString>{
@@ -42,23 +43,25 @@ bool FLoreStatusParserTest::RunTest(const FString& Parameters)
 		TEXT(R"({"tagName":"repositoryStatusFile","data":{"path":"Content/Moved.uasset","fromPath":"Content/Old.uasset","action":"move","type":"file","flagDirty":1,"flagStaged":0,"flagConflict":0,"flagConflictUnresolved":0}})"),
 		TEXT(R"({"tagName":"repositoryStatusFile","data":{"path":"Content/Folder","action":"add","type":"directory","flagDirty":1,"flagStaged":0,"flagConflict":0,"flagConflictUnresolved":0}})"),
 		TEXT(R"({"tagName":"pathIgnore","data":{"path":"Saved/Ignored.txt"}})"),
+		TEXT(R"({"tagName":"filterExclude","data":{"reason":0,"path":"Saved/Excluded.txt"}})"),
 		TEXT("not json")
 	}, TEXT("\n"));
 
 	TArray<FLoreSourceControlState> States;
 	FLoreStatusSummary Summary;
-	FLoreSourceControlUtils::ParseStatusResults(Results, TArray<FString>{ IgnoredPath, CleanPath }, RepositoryRoot, States, &Summary);
+	FLoreSourceControlUtils::ParseStatusResults(Results, TArray<FString>{ IgnoredPath, ExcludedPath, CleanPath }, RepositoryRoot, States, &Summary);
 
 	TestEqual(TEXT("Branch name"), Summary.BranchName, FString(TEXT("main")));
 	TestTrue(TEXT("Remote-ahead flag"), Summary.bIsRemoteAhead);
 	TestFalse(TEXT("Local-ahead flag"), Summary.bIsLocalAhead);
-	TestEqual(TEXT("State count"), States.Num(), 6);
+	TestEqual(TEXT("State count"), States.Num(), 7);
 
 	const FLoreSourceControlState* Modified = FindState(States, ModifiedPath);
 	const FLoreSourceControlState* Added = FindState(States, AddedPath);
 	const FLoreSourceControlState* Moved = FindState(States, MovedPath);
 	const FLoreSourceControlState* Old = FindState(States, OldPath);
 	const FLoreSourceControlState* Ignored = FindState(States, IgnoredPath);
+	const FLoreSourceControlState* Excluded = FindState(States, ExcludedPath);
 	const FLoreSourceControlState* Clean = FindState(States, CleanPath);
 
 	TestTrue(TEXT("Modified file parsed"), Modified && Modified->bIsModified && Modified->bCanCheckIn);
@@ -66,6 +69,8 @@ bool FLoreStatusParserTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Move destination parsed"), Moved && Moved->bIsAdded);
 	TestTrue(TEXT("Move source parsed"), Old && Old->bIsDeleted);
 	TestTrue(TEXT("Ignored file parsed"), Ignored && Ignored->bIsIgnored && !Ignored->bIsSourceControlled);
+	// 0.8.6 renamed the event, and an unrecognized one would silently offer an excluded path for add.
+	TestTrue(TEXT("Excluded file parsed (0.8.6 filterExclude)"), Excluded && Excluded->bIsIgnored && !Excluded->bIsSourceControlled);
 	TestTrue(TEXT("Clean requested file parsed"), Clean && Clean->bIsSourceControlled && Clean->bIsCurrent);
 	return true;
 }
