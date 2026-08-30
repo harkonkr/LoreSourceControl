@@ -120,18 +120,6 @@ namespace FLoreSourceControlUtils
 	/** Parse structured error events emitted by a Lore command. */
 	LORESOURCECONTROL_API void ParseCommandErrors(const TArray<FString>& InResults, TArray<FString>& OutErrorMessages);
 
-	/**
-	 * Record whether check-out currently means anything: locking is enabled in settings AND a reachable
-	 * remote can arbitrate it. Set from the game thread when a command is issued.
-	 */
-	LORESOURCECONTROL_API void SetLockingActive(bool bInActive);
-
-	/**
-	 * Whether Lore locks are in play at all. When they are not, every tracked file behaves the way it does
-	 * under Git - always editable, never awaiting a check-out - and the state must report that to the editor.
-	 */
-	LORESOURCECONTROL_API bool IsLockingActive();
-
 	/** True if the message is Lore reporting that the lock service is out of reach rather than a real fault. */
 	LORESOURCECONTROL_API bool IsLockServiceUnavailableError(const FString& InError);
 

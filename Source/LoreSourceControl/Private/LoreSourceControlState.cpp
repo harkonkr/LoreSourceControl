@@ -1,7 +1,6 @@
 // Copyright Solessfir 2026. All Rights Reserved.
 
 #include "LoreSourceControlState.h"
-#include "LoreSourceControlUtils.h"
 #include "RevisionControlStyle/RevisionControlStyle.h"
 
 #define LOCTEXT_NAMESPACE "LoreSourceControl"
@@ -57,8 +56,7 @@ FSlateIcon FLoreSourceControlState::GetIcon() const
 		return FSlateIcon(FRevisionControlStyleManager::GetStyleSetName(), "RevisionControl.CheckedOutByOtherUser", NAME_None, "RevisionControl.CheckedOutByOtherUserBadge");
 	}
 
-	// bIsCheckedOut, not IsCheckedOut(): with locking off that would badge every tracked file.
-	if (bIsCheckedOut)
+	if (IsCheckedOut())
 	{
 		return FSlateIcon(FRevisionControlStyleManager::GetStyleSetName(), "RevisionControl.CheckedOut");
 	}
@@ -88,26 +86,6 @@ FSlateIcon FLoreSourceControlState::GetIcon() const
 }
 #endif
 
-bool FLoreSourceControlState::CanCheckout() const
-{
-	if (!FLoreSourceControlUtils::IsLockingActive())
-	{
-		return false;
-	}
-
-	return bIsSourceControlled && !bIsCheckedOut && !bIsCheckedOutOther;
-}
-
-bool FLoreSourceControlState::IsCheckedOut() const
-{
-	if (!FLoreSourceControlUtils::IsLockingActive())
-	{
-		return bIsSourceControlled;
-	}
-
-	return bIsCheckedOut;
-}
-
 bool FLoreSourceControlState::IsCheckedOutOther(FString* Who) const
 {
 	if (Who)
@@ -129,8 +107,7 @@ FText FLoreSourceControlState::GetDisplayName() const
 		return LOCTEXT("StateCheckedOutByOther", "Checked Out by Other User");
 	}
 
-	// Raw lock fact here too: presentation reports what Lore knows, not the editor-facing capability.
-	if (bIsCheckedOut)
+	if (IsCheckedOut())
 	{
 		return LOCTEXT("StateCheckedOut", "Checked Out");
 	}
@@ -180,7 +157,7 @@ FText FLoreSourceControlState::GetDisplayTooltip() const
 	{
 		Tooltip = FText::Format(LOCTEXT("StateCheckedOutByOtherTooltip", "Checked out by {0}"), FText::FromString(CheckedOutOther));
 	}
-	else if (bIsCheckedOut)
+	else if (IsCheckedOut())
 	{
 		Tooltip = LOCTEXT("StateCheckedOutTooltip", "Checked out by you");
 	}
