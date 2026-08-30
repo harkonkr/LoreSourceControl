@@ -412,9 +412,15 @@ bool FLoreCheckOutWorker::Execute(FLoreSourceControlCommand& InCommand)
 	StateScanPaths = InCommand.Files;
 	bApplyStateResults = FLoreSourceControlUtils::RunUpdateStatus(InCommand.PathToLoreBinary, InCommand.PathToRepositoryRoot, InCommand.Files, *InCommand.Provider, InCommand.bShouldLockFiles, InCommand.ErrorMessages, States);
 
-	// Optimistically ensure checkout state for the files we successfully locked.
-	// A post-acquire status query can report nothing due to capture, owner, or branch timing, but the acquire return code already confirmed success.
-	if (bShouldLock && InCommand.bCommandSuccessful)
+	// Optimistically ensure checkout state for the files this operation just checked out.
+	// With locking on, a post-acquire status query can report nothing due to capture, owner, or branch timing,
+	// but the acquire return code already confirmed success.
+	// With locking off there is no lock to read back at all, and reporting success while leaving the state
+	// unchecked-out makes the editor announce "Unable to Check Out From Revision Control" over a file it just
+	// saved (FileHelpers.cpp re-reads IsCheckedOut after the operation and treats false as a failure).
+	// This marks only the files named in this command - never every tracked file, which is what broke
+	// changelist validation in 6901696.
+	if (InCommand.bCommandSuccessful)
 	{
 		for (FLoreSourceControlState& S : States)
 		{
