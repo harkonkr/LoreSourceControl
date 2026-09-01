@@ -33,7 +33,15 @@ public:
 	virtual bool CanCheckIn() const override { return bCanCheckIn; }
 	// Must actually be tracked by Lore already, and not already locked.
 	virtual bool CanCheckout() const override { return bIsSourceControlled && !bIsCheckedOut && !bIsCheckedOutOther; }
-	virtual bool IsCheckedOut() const override { return bIsCheckedOut; }
+	// A locally edited file counts as checked out, the way Git's provider answers, whether or not a lock backs it.
+	// FSourceControlWindows::PromptForCheckin drops from the submit every file that answers false to IsCheckedOut,
+	// IsAdded and IsDeleted, and then returns "succeeded" once nothing is left - a Submit that runs no lore command
+	// at all and reports no error. With locking off nothing ever sets bIsCheckedOut, so every edited file was dropped.
+	// Deliberately narrower than 6901696's "every tracked file": a clean file still answers false, so
+	// UDataValidationChangelist does not flag the whole content tree as missing from the changelist.
+	// bIsAdded is deliberately left out: SourceControlHelpers::RevertUnchangedFiles reverts anything that is
+	// checked out and not modified, which would throw away every newly added asset just before it is submitted.
+	virtual bool IsCheckedOut() const override { return bIsCheckedOut || bIsModified; }
 	virtual bool IsCheckedOutOther(FString* Who) const override;
 	virtual bool IsCheckedOutInOtherBranch(const FString& CurrentBranch = FString()) const override { return false; }
 	virtual bool IsModifiedInOtherBranch(const FString& CurrentBranch = FString()) const override { return false; }

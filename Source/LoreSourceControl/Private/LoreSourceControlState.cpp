@@ -56,7 +56,9 @@ FSlateIcon FLoreSourceControlState::GetIcon() const
 		return FSlateIcon(FRevisionControlStyleManager::GetStyleSetName(), "RevisionControl.CheckedOutByOtherUser", NAME_None, "RevisionControl.CheckedOutByOtherUserBadge");
 	}
 
-	if (IsCheckedOut())
+	// bIsCheckedOut, not IsCheckedOut(): the editor-facing answer counts a local edit as a checkout, which here
+	// would badge every modified file as checked out instead of showing it as modified locally.
+	if (bIsCheckedOut)
 	{
 		return FSlateIcon(FRevisionControlStyleManager::GetStyleSetName(), "RevisionControl.CheckedOut");
 	}
@@ -107,7 +109,8 @@ FText FLoreSourceControlState::GetDisplayName() const
 		return LOCTEXT("StateCheckedOutByOther", "Checked Out by Other User");
 	}
 
-	if (IsCheckedOut())
+	// Raw lock fact here too: presentation reports what Lore knows, not the editor-facing capability.
+	if (bIsCheckedOut)
 	{
 		return LOCTEXT("StateCheckedOut", "Checked Out");
 	}
@@ -157,7 +160,7 @@ FText FLoreSourceControlState::GetDisplayTooltip() const
 	{
 		Tooltip = FText::Format(LOCTEXT("StateCheckedOutByOtherTooltip", "Checked out by {0}"), FText::FromString(CheckedOutOther));
 	}
-	else if (IsCheckedOut())
+	else if (bIsCheckedOut)
 	{
 		Tooltip = LOCTEXT("StateCheckedOutTooltip", "Checked out by you");
 	}
