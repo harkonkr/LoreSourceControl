@@ -5,6 +5,7 @@
 #include "LoreSourceControlUtils.h"
 #include "LoreSourceControlProvider.h"
 #include "SourceControlOperations.h"
+#include "ISourceControlModule.h"
 #include "GenericPlatform/GenericPlatformFile.h"
 #include "Misc/Paths.h"
 #include "HAL/PlatformFileManager.h"
@@ -81,9 +82,15 @@ bool FLoreCheckInWorker::Execute(FLoreSourceControlCommand& InCommand)
 
 	if (InCommand.Files.IsEmpty())
 	{
+		UE_LOG(LogSourceControl, Warning, TEXT("[Lore] Submit reached the provider with no repository files - nothing was committed."));
 		InCommand.ErrorMessages.Add(TEXT("Submit was cancelled because no repository files were selected."));
 		return false;
 	}
+
+	// The engine can also drop every file before it gets here (FSourceControlWindows::PromptForCheckin removes any
+	// file whose state is not checked out, added or deleted, then returns success), in which case this never runs.
+	// Announcing the file count is what distinguishes "Lore refused" from "the editor never asked".
+	UE_LOG(LogSourceControl, Log, TEXT("[Lore] Submitting %d file(s)."), InCommand.Files.Num());
 
 	// Lore locks are advisory, so validate against a fresh server query immediately before staging.
 	// A query failure is a hard stop: stale cache data must never be treated as permission to submit.
@@ -258,6 +265,9 @@ bool FLoreCheckInWorker::Execute(FLoreSourceControlCommand& InCommand)
 			InCommand.bHasRemote ? LOCTEXT("CheckInSuccess", "Submitted revision \"{0}\".") : LOCTEXT("LocalCheckInSuccess", "Committed revision \"{0}\" locally."),
 			FText::FromString(CommitMessage)));
 	}
+
+	UE_CLOG(InCommand.bCommandSuccessful, LogSourceControl, Log, TEXT("[Lore] Submit finished: %d file(s) committed%s."), InCommand.Files.Num(), bPushed ? TEXT(" and pushed") : TEXT(" locally"));
+	UE_CLOG(!InCommand.bCommandSuccessful, LogSourceControl, Warning, TEXT("[Lore] Submit failed - see the Revision Control message log."));
 
 	return InCommand.bCommandSuccessful;
 }

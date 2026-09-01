@@ -486,7 +486,18 @@ namespace FLoreSourceControlUtils
 			FullCommand += TEXT("\"");
 		}
 
+		// Read-only queries run constantly - every status refresh, every branch widget repaint - and would drown the log,
+		// so only the commands that change the repository are logged at the default verbosity.
+		// Those are the ones worth being able to confirm from Saved/Logs alone when a Submit reports that nothing happened.
+		static const TCHAR* ReadOnlyCommands[] = { TEXT("status"), TEXT("branch info"), TEXT("branch list"), TEXT("branch diff"), TEXT("file history"), TEXT("lock query"), TEXT("lock status") };
+		bool bMutating = true;
+		for (const TCHAR* ReadOnlyCommand : ReadOnlyCommands)
+		{
+			bMutating &= !InCommand.Equals(ReadOnlyCommand, ESearchCase::IgnoreCase);
+		}
+
 		UE_LOG(LogSourceControl, Verbose, TEXT("[Lore] %s %s (cwd=%s)"), *InLoreBinary, *FullCommand, *WorkingDir);
+		UE_CLOG(bMutating, LogSourceControl, Log, TEXT("[Lore] %s %s (cwd=%s)"), *InLoreBinary, *FullCommand, *WorkingDir);
 
 		// Pass the correct working directory.
 		// Lore discovers the repository by walking up for a .lore folder, but running from the correct root makes status/stage/commit/sync more reliable across platforms.
@@ -501,6 +512,7 @@ namespace FLoreSourceControlUtils
 		}
 
 		UE_LOG(LogSourceControl, Verbose, TEXT("[Lore] ReturnCode=%d, Stdout:\n%s"), ReturnCode, *Results);
+		UE_CLOG(ReturnCode != 0, LogSourceControl, Warning, TEXT("[Lore] '%s' exited with code %d"), *InCommand, ReturnCode);
 		if (!Errors.IsEmpty())
 		{
 			UE_LOG(LogSourceControl, Warning, TEXT("[Lore] Stderr:\n%s"), *Errors);
