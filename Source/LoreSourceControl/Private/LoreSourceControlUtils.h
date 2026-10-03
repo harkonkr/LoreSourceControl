@@ -60,6 +60,39 @@ struct LORESOURCECONTROL_API FLoreLockOwner
 	{
 		return DisplayName.IsEmpty() ? Identity : DisplayName;
 	}
+
+	/**
+	 * True when Lore could not resolve who holds the lock.
+	 *
+	 * A server with no auth endpoint configured answers `lock query` with the literal owner
+	 * "<unknown>" and logs "authentication requires a configured auth endpoint"; the raw user ID
+	 * never becomes an identity we could compare against. Measured on lore 0.10.0+1172,
+	 * 2026-10-04.
+	 */
+	bool IsUnresolved() const
+	{
+		return Identity.IsEmpty()
+			|| Identity.Equals(TEXT("<unknown>"), ESearchCase::IgnoreCase)
+			|| Identity.Equals(TEXT("unknown"), ESearchCase::IgnoreCase);
+	}
+
+	/**
+	 * Whether this lock should be treated as ours.
+	 *
+	 * "me"/"self" are Lore's own aliases and the configured identity is this repository's. An
+	 * UNRESOLVED owner also counts as ours, deliberately: on a server without auth every lock
+	 * reads as "<unknown>", so refusing on it blocks every submit forever - including locks this
+	 * very editor just took. The cost of being wrong is bounded, because Lore locks are advisory
+	 * and a real push still has to succeed. A resolved identity that differs is still refused, so
+	 * a server that does have auth keeps full multi-user protection.
+	 */
+	bool IsOwnedBy(const FString& InOwnIdentity) const
+	{
+		return IsUnresolved()
+			|| Identity.Equals(TEXT("me"), ESearchCase::IgnoreCase)
+			|| Identity.Equals(TEXT("self"), ESearchCase::IgnoreCase)
+			|| (!InOwnIdentity.IsEmpty() && Identity.Equals(InOwnIdentity, ESearchCase::IgnoreCase));
+	}
 };
 
 namespace FLoreSourceControlUtils

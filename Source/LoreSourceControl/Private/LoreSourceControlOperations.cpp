@@ -115,9 +115,17 @@ bool FLoreCheckInWorker::Execute(FLoreSourceControlCommand& InCommand)
 					continue;
 				}
 
-				const bool bOwnLock = Lock.Value.Identity.Equals(TEXT("me"), ESearchCase::IgnoreCase)
-					|| Lock.Value.Identity.Equals(TEXT("self"), ESearchCase::IgnoreCase)
-					|| (!InCommand.Identity.IsEmpty() && Lock.Value.Identity.Equals(InCommand.Identity, ESearchCase::IgnoreCase));
+				// An unresolved owner counts as ours; see FLoreLockOwner::IsOwnedBy. A server with no
+				// auth endpoint answers "<unknown>" for every lock, so refusing on that aborted every
+				// submit - including locks this editor had just taken itself.
+				const bool bOwnLock = Lock.Value.IsOwnedBy(InCommand.Identity);
+				if (bOwnLock && Lock.Value.IsUnresolved())
+				{
+					UE_LOG(LogSourceControl, Warning,
+						TEXT("[Lore] %s is held by a lock whose owner Lore could not resolve; proceeding as if it were ours. ")
+						TEXT("Configure an auth endpoint on the server if locks have to identify users."),
+						*FPaths::GetCleanFilename(File));
+				}
 				if (!bOwnLock)
 				{
 					const FString LockOwner = Lock.Value.GetDisplayName();

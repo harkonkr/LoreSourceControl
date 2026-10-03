@@ -590,9 +590,10 @@ namespace FLoreSourceControlUtils
 
 		auto ApplyLockOwner = [&OwnIdentity](FLoreSourceControlState& State, const FLoreLockOwner& Owner)
 		{
-			const bool bOther = !Owner.Identity.Equals(TEXT("me"), ESearchCase::IgnoreCase)
-				&& !Owner.Identity.Equals(TEXT("self"), ESearchCase::IgnoreCase)
-				&& (OwnIdentity.IsEmpty() || !Owner.Identity.Equals(OwnIdentity, ESearchCase::IgnoreCase));
+			// FLoreLockOwner::IsOwnedBy also treats an UNRESOLVED owner as ours - see its comment.
+			// Without that, a server with no auth endpoint reports every lock as "<unknown>", the
+			// file shows as checked out by another user, and nothing can be submitted.
+			const bool bOther = !Owner.IsOwnedBy(OwnIdentity);
 			State.bIsCheckedOut = !bOther;
 			State.bIsCheckedOutOther = bOther;
 			if (bOther)
