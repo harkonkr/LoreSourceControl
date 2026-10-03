@@ -180,7 +180,13 @@ namespace FLoreSourceControlUtils
 		{
 			if (OutTestedVersion)
 			{
-				*OutTestedVersion = Major == 0 && Minor == 8 && Patch >= 6;
+				// Tested range widened from "0.8.6 only" to 0.8.6 and every later 0.x.
+				// Verified against lore 0.10.0+1172 on 2026-10-04: status --json still carries the
+				// fields this plugin parses (flagDirty/flagStaged/flagConflict*, action, path,
+				// branchName, revisionNumber, remoteAvailable/remoteAuthorized), and lock
+				// acquire/query/release behave as before, so the 0.8.6 parsing holds.
+				// A 1.x release is deliberately left outside the range.
+				*OutTestedVersion = Major == 0 && (Minor > 8 || (Minor == 8 && Patch >= 6));
 			}
 			return true;
 		}
